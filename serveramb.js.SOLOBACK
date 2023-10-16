@@ -1,0 +1,240 @@
+// Setup basic express server
+var express = require('express');
+var app = express();
+var server = require('http').createServer(app);
+var io = require('socket.io')(server);
+var port = process.env.PORT || 8000;
+var request = require('request');
+
+server.listen(port, function () {
+  console.log('Server listening at port %d', port);
+});
+
+//app.listen(app.get('port'), '0.0.0.0');
+
+// Routing
+app.use(express.static(__dirname + '/www'));
+
+var numUsers = 0;
+
+//############ METODO PRINCIPAL AL CONECTARSE UN CLIENTE #############//
+io.on('connection', function (socket) {
+
+  console.log("#### CONEXION ESTABLECIDA ####");
+  var addedPlayer = false;
+  var room = 0;//TERMINAR ESTA LOGICA CON LAS ROOM
+
+  // Connected, let's sign-up for to receive messages for this room
+   //socket.emit('room', room); VALIDAR ROOMS , room puede ser un incremental
+   
+   
+   /*
+   //emit from server to everyone but the clients socket
+socket.broadcast.emit('joined_channel', data);
+
+//broadcast information to a certain room only (excluding the client)
+socket.broadcast.to( data.room ).emit('joined_channel');
+
+//broadcast information globally to a certain room
+io.sockets.in( data.room ).emit('joined_channel');*/
+
+
+
+   //########### AL CONECTARSE UN CLIENTE ESPERAMOS UN PING DEL ROOM AL CUAL QUIERE ENTRAR
+    socket.on('room', function(room) {
+		console.log("UNIENDOSE A LA ROOM: "+room);
+        socket.join(room);
+    });
+	//io.sockets.in(room).emit('message', 'what is going on, party people?');
+
+  //################### CLIENTE EMITE AGREGAR JUGADOR Y SE CONTROLA LOGIN Y MENSAJE A CLIENTES DE USER JOINED ########################### //
+  socket.on('add player', function (data) {
+    
+    var code;
+    var res;
+    var jsonObject;
+    var tokenRes;
+    var roomRes;
+    var playerNum;
+
+    var aliasReq = data.alias;
+    var imeiReq = data.imei;
+    var actionGameReq = data.action;
+
+      console.log('### SOLICITANDO CREAR PARTIDA A AMBICIOSO.CL ####');
+      //INVOCACION DE CREACION PARTIDA
+      //REQUEST DE PRUEBA SOCKET{"alias": "Jose", "imei": 484738733, "action_game": "one_player"}
+
+     request('http://ambicioso.cl/crear_registro_ambicioso.asp?alias='+aliasReq+'&imei='+imeiReq+'&action='+actionGameReq, function (error, response, body) {
+
+    if (!error && response.statusCode == 200) {
+        
+    code = response.statusCode;
+    res = response.body;
+    console.log('STATUS: ' + code);
+    console.log('BODY: ' + JSON.stringify(res));
+    //TEMPORAL MIENTRAS ARREGLAN LAS RESPUESTAS DOCIRS
+    var prueba='{"token":"QY83", "imei": "56953358888", "alias": "Luis", "action": "multiplayer", "room": 3, "playerNum": 1}';
+    jsonObject = JSON.parse(prueba);
+
+    tokenRes = jsonObject.token;
+    roomRes = jsonObject.room;
+    playerNum = jsonObject.playerNum;
+
+    }else{
+      console.log('STATUS: ' + code);
+      console.log(error);}
+      });
+
+    if (addedPlayer) return;
+    // we store the username in the socket session for this client
+    socket.alias = aliasReq;
+    socket.token = tokenRes;
+    socket.room = roomRes;
+    addedPlayer = true;
+    ++numUsers;
+  
+  console.log("#### LOGIN ####");
+    socket.in(room).emit('login', {
+      numUsers: numUsers, 
+	  token: socket.token, 
+	  room: socket.room 
+    });
+    //EMITE MENSAJE A CLIENTES EN LA ROOM ESPECIFICADA
+    socket.broadcast.to(room).emit('user joined', {
+      alias: socket.alias, 
+	  token: socket.token, 
+	  room: socket.room, 
+	  turn: socket.alias, 
+	  numUsers: numUsers
+    });
+  //LA VARIABLE ROOM SE INCREMENTA CADA VEZ QUE DOS SOCKETS SE UNEN Y HACEN LOGIN, ESTO PARA QUE LOS SIGUIENTES CLIENTES TENGAN SUS PROPIAS ROOM
+  if(numUsers % 2 == 0){
+  room++;
+  }
+  });
+
+  // ###################################### CUANDO EL CLIENTE EMITE UNA SOLICITUD DE CARTA ################################## //
+  socket.on('new card', function (data) {
+    console.log('### SOLICITANDO NUEVA CARTA A AMBICIOSO.CL ####');
+    var res;
+    var code;
+    var aliasReq = data.alias;
+    var tokenReq = data.token;
+    var turnReq = data.turn;
+    var roomReq = data.room;
+
+    //{"alias": "Luis", "imei": "73462374", "token": "01BO",  "turn": "A", "room": 1} REQUEST DE PRUEBA
+
+    request('http://ambicioso.cl/devuelve_carta_sacada_ambicioso.asp?token='+tokenReq+'&alias='+aliasReq+'&turn='+turnReq+'&room='+roomReq, function (error, response, body) {
+    if (!error && response.statusCode == 200) {
+
+        code = response.statusCode;
+		res = response.body;
+		console.log('STATUS: ' + code);
+		console.log('BODY: ' + JSON.stringify(res));
+		//TEMPORAL MIENTRAS ARREGLAN LAS RESPUESTAS DOCIRS
+		var prueba='{"last_card": "07Diamante_A", "keeping_cards":"91", "action":"multiplayer", "turn":"A", "room":1}';
+
+		var jsonObject = JSON.parse(prueba);
+		console.log("Last_card: "+jsonObject.last_card);
+
+    }else{
+    	console.log('STATUS: ' + code);
+    	console.log(error);}
+    });
+
+  //EMITE MENSAJE CON LA RESPUESTA DE NUEVA CARTA PARA LOS CLIENTES PERTENECIENTES A LA ROOM QUE VIENE POR REQUEST. response devuelve los datos socket.broadcast.emit
+    socket.in(room).emit('new card', {//ENVIA A TODOS EN UNA ROOM
+      code: code, 
+      alias: socket.alias, 
+      response: res
+    });
+  });
+
+  // when the client emits 'typing', we broadcast it to others
+  socket.on('playing', function (data) {
+
+	  console.log("#### LLEGO A PLAYING SOCKET ON ####");
+    var roomReq = data.room;
+    var alias = data.alias;
+    //EMITE MENSAJE CON EL ALIAS DEL JUGADOR QUE ESTA JUGANDO 
+    socket.in(roomReq).emit('playing', {
+      alias: socket.alias
+    });
+  });
+
+  //############################## THE CLIENT STOP PLAYING (TOUCHING) ###########################//
+  socket.on('stop playing', function (data) {
+    var roomReq = data.room;
+    var alias = data.alias;
+    socket.in(roomReq).emit('stop typing', {
+      alias: socket.alias
+    });
+  });
+
+  //############################# EL CLIENTE SE HA DESCONECTADO ########################### //
+  socket.on('disconnect', function (data) {
+	  console.log("#### LLEGO A DISCONNECT SOCKET ON ####");
+    var roomReq = data.room;
+    var alias = data.alias;
+
+    if (addedPlayer) {
+      --numUsers;
+
+      //EMITE MENSAJE A LOS CLIENTES DE LA ROOM QUE EL USUARIO HA ABANDONADO
+      socket.in(roomReq).emit('user left', {
+        alias: alias,
+        numUsers: numUsers
+      });
+    }
+  });
+
+  //################################# EL CLIENTE SOLICITA EL FIN DEL TURNO ############################ //
+  socket.on('end turn', function (data) {
+
+      var aliasReq = data.player1;
+      var remoteAliasReq = data.player2;
+      var actionGameReq = data.action;
+      var roomReq = data.room;
+      var tokenReq = data.token;
+      var code;
+      var res;
+      var jsonObject;
+
+      console.log("#### SOLICITANDO END TURN SOCKET ON ####");
+
+      //INVOCACION DE METODO END TURN PARTIDA http://ambicioso.cl/MiTurno_Ambicioso.asp?token=01BO&player1=Luis&player2=Pepe 
+      //JSON REQUEST PRUEBA {"player1": "Luis", "player2": "Pepe", "token": "01BO"}
+
+     request('http://ambicioso.cl/MiTurno_Ambicioso.asp?player1='+aliasReq+'&player2='+remoteAliasReq+'&token='+tokenReq+'&action='+actionGameReq+'&room='+roomReq, function (error, response, body) {
+
+    if (!error && response.statusCode == 200) {
+        
+        code = response.statusCode;
+    res = response.body;
+    console.log('STATUS: ' + code);
+    console.log('BODY: ' + JSON.stringify(res));
+    //TEMPORAL MIENTRAS ARREGLAN LAS RESPUESTAS DOCIRS
+    var prueba='{"ultima_linea": "04Corazon_A|102|||A|", "total_jugador1": 0, "total_jugador2": 0, "room": 2, "token": "2OBG"}';
+    jsonObject = JSON.parse(prueba);
+
+    console.log("room: "+jsonObject.room+", token: "+jsonObject.token);
+
+    }else{
+      console.log('STATUS: ' + code);
+      console.log(error);}
+
+    });
+      socket.emit('end turn', {//TODOS LOS CLIENTES RECIBEN
+      	code: code, 
+        alias: socket.alias, 
+        room: roomReq,
+        token: socket.token, 
+        remotealias: socket.remotealias, 
+        res: jsonObject
+      });
+  });
+
+
+});

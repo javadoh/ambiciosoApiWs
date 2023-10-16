@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Socket.IO Ambicioso Test</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="inputJson">
+  <label>Ingresa el request json: </label><input type="text" id="jsonStr" value="" />
+  </div>
+  <div id="buttonsDiv">
+  <input type="button" id="btnSetPlayer" value="Add Player" />
+  <input type="button" id="btnAskCard" value="Ask Card" />
+  <input type="button" id="btnEndTurn" value="End Turn" />
+  </div>
+  
+  <div id="responsesDiv">
+  <span id="resMsg"></span>
+  <span id="resMsgTyping"></span> 
+  </div>
+
+  <script src="https://code.jquery.com/jquery-1.10.2.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.js"></script>
+  <!--<script src="/main.js"></script>-->
+  
+  <script>
+  $(function() {
+  var alias;
+  var connected = false;
+  var playing = false;
+  var lastPlayingTime;
+  var $messages = $('.messages');
+  var socket = io();
+  
+  $(document).ready(function(){
+    $('#btnSetPlayer').click(function(){
+    var jsonString = document.getElementById('jsonStr').value;//'{"alias": "Jose", "imei": 484738733, "action_game": "one_player"}';
+    var jsonObjectReq = JSON.parse(jsonString);
+    // If the username is valid
+    if (jsonObjectReq.alias) {
+      alias = jsonObjectReq.alias;
+	  }
+      // Tell the server your username
+      socket.emit('add player', jsonObjectReq);
+    });
+  });
+  
+  $(document).ready(function(){
+    $('#btnAskCard').click(function(){
+    var jsonString = document.getElementById('jsonStr').value;//'{"token": "2ED2", "alias": "Jose", "imei": 484738733, "action_game": "one_player", "room": 1}';
+    var jsonObjectReq = JSON.parse(jsonString);
+    // If the username is valid
+    if (jsonObjectReq.alias) {
+      alias = jsonObjectReq.alias;
+	  }
+      // Tell the server your username
+      socket.emit('new card', jsonObjectReq);
+    });
+  });
+  
+  $(document).ready(function(){
+    $('#btnEndTurn').click(function(){
+	var jsonString = document.getElementById('jsonStr').value;
+	var jsonObjectReq = JSON.parse(jsonString);
+
+	// Tell the server your username
+      socket.emit('end turn', jsonObjectReq);
+  });
+ });
+  
+  socket.on('login', function (data) {
+    connected = true;
+  });
+
+  // Whenever the server emits 'new message', update the chat body
+  socket.on('new card', function (data) {
+		$('#resMsg').text("New card: "+JSON.stringify(data));
+		alert("New card: "+JSON.stringify(data));
+  });
+
+  // Whenever the server emits 'user joined', log it in the chat body
+  socket.on('user joined', function (data) {
+	$('#resMsg').text("Usuario joined: "+JSON.stringify(data));
+	alert("New card: "+JSON.stringify(data));
+  });
+
+  // Whenever the server emits 'user left', log it in the chat body
+  socket.on('player left', function (data) {
+	$('#resMsg').text("Usuario left: "+data.alias);
+  });
+
+  // Whenever the server emits 'typing', show the typing message
+  socket.on('playing', function (data) {
+    $('#resMsgTyping').text("Está escribiendo");
+  });
+
+  // Whenever the server emits 'stop typing', kill the typing message
+  socket.on('stop playing', function (data) {
+  $('#resMsgTyping').text("Paro de jugar: "+data.alias);
+  });
+
+  socket.on('disconnect', function () {
+	$('#resMsg').text("you have been disconnected");
+  });
+
+  socket.on('reconnect', function () {
+    if (alias) {
+      socket.emit('add user', alias);
+    }
+  });
+
+  socket.on('reconnect_error', function () {
+	$('#resMsg').text("error reconectando");
+  });
+  
+  
+  // Adds the visual chat message to the message list
+  function addMessage (data, options) {
+    // Don't fade the message in if there is an 'X was typing'
+    var $typingMessages = getTypingMessages(data);
+    options = options || {};
+    if ($typingMessages.length !== 0) {
+      options.fade = false;
+      $typingMessages.remove();
+    }
+
+    var $usernameDiv = $('<span class="username"/>')
+      .text(data.alias)
+      .css('color', getUsernameColor(data.alias));
+    var $messageBodyDiv = $('<span class="messageBody">')
+      .text(data.message);
+
+    var typingClass = data.typing ? 'typing' : '';
+    var $messageDiv = $('<div id="responsesDiv" />')
+      .data('jsonResponse', response)
+      .addClass(typingClass)
+      .append($usernameDiv, $messageBodyDiv);
+
+    addMessageElement($messageDiv, options);
+  }
+  
+   function addMessageElement (el, options) {
+    var $el = $(el);
+
+    // Setup default options
+    if (!options) {
+      options = {};
+    }
+    if (typeof options.fade === 'undefined') {
+      options.fade = true;
+    }
+    if (typeof options.prepend === 'undefined') {
+      options.prepend = false;
+    }
+
+    // Apply options
+    if (options.fade) {
+      $el.hide().fadeIn(FADE_TIME);
+    }
+    if (options.prepend) {
+      $messages.prepend($el);
+    } else {
+      $messages.append($el);
+    }
+    $messages[0].scrollTop = $messages[0].scrollHeight;
+  }
+  });
+  </script>
+</body>
+</html>
