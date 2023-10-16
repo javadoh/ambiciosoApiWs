@@ -1,0 +1,16 @@
+{
+    "name": "AmbiciosoApiWs",
+    "description": "Aplicacion intermedia rest para transferencia de objetos websocket ambicioso game",
+    "version": "0.0.1",
+    "private": true,
+    "dependencies": {
+      "express": "^3.21.2",
+      "latest-version": "^2.0.0",
+      "socket-io": "1.7.2",
+      "request": "^2.79.0"
+    }, 
+    "devDependencies": {
+      "mongoose": "^7.4.0"
+    }
+  }
+  
